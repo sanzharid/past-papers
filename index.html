@@ -121,6 +121,19 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;paddin
 @keyframes blink{50%{opacity:0}}
 .splash{position:absolute;width:10px;height:10px;background:var(--haz2);border:2px solid var(--line);z-index:5;pointer-events:none}
 .coinpop{position:absolute;z-index:6;font-family:"Press Start 2P";font-size:12px;color:var(--coin);text-shadow:2px 2px 0 var(--line);pointer-events:none;white-space:nowrap}
+/* 3D track */
+.track.track3d{height:clamp(250px,46vh,440px);background:#0b0b26}
+.track3d canvas{display:block;width:100%;height:100%;touch-action:manipulation}
+.popl{position:absolute;left:50%;top:18%;transform:translateX(-50%);z-index:6;font-family:"Press Start 2P";font-size:14px;color:var(--coin);text-shadow:3px 3px 0 var(--line);pointer-events:none;white-space:nowrap}
+.track3d .loading{position:absolute;inset:0;display:grid;place-items:center;font-family:"Press Start 2P";font-size:11px;color:#fff}
+.runbody{display:block}
+@media (min-width:960px){
+  body.running .wrap{max-width:1200px}
+  .runbody{display:grid;grid-template-columns:1.2fr 1fr;gap:20px;align-items:start}
+  .trackcol{position:sticky;top:12px}
+  .track.track3d{height:min(72vh,600px)}
+  .runbody .qcard{margin-top:0}
+}
 
 .qcard{margin-top:14px}
 .qmeta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
@@ -238,7 +251,7 @@ input[type=text]{width:100%;font:inherit;font-size:20px;padding:12px;border:var(
 
     <div class="foot">
       Questions from the Year 6 Pre-Test practice papers 1–4 · No calculator, use rough paper!<br>
-      <button id="themeBtn">Day / night</button> · <button id="resetBtn">Reset progress</button>
+      <button id="themeBtn">Day / night</button> · <button id="liteBtn">3D: ON</button> · <button id="resetBtn">Reset progress</button>
     </div>
   </section>
 
@@ -252,17 +265,18 @@ input[type=text]{width:100%;font:inherit;font-size:20px;padding:12px;border:var(
         <span class="chip"><span class="coin"></span><span id="runCoins">0</span></span>
       </div>
     </div>
-    <div class="track" id="track">
-      <div class="strip" id="strip"></div>
-      <div class="hazard"></div>
+    <div class="runbody">
+      <div class="trackcol"><div class="track" id="track"></div></div>
+      <div class="qcol">
+        <div class="panel qcard" id="qCard">
+          <div class="qmeta" id="qMeta"></div>
+          <div class="prompt" id="qPrompt"></div>
+          <div class="diagram" id="qDiagram"></div>
+        </div>
+        <div class="opts" id="opts"></div>
+        <div id="fb"></div>
+      </div>
     </div>
-    <div class="panel qcard" id="qCard">
-      <div class="qmeta" id="qMeta"></div>
-      <div class="prompt" id="qPrompt"></div>
-      <div class="diagram" id="qDiagram"></div>
-    </div>
-    <div class="opts" id="opts"></div>
-    <div id="fb"></div>
   </section>
 
   <!-- RESULTS -->
@@ -289,6 +303,7 @@ input[type=text]{width:100%;font:inherit;font-size:20px;padding:12px;border:var(
 <div class="modal hidden" id="modal"><div class="panel" id="modalCard"></div></div>
 
 <script src="questions.js"></script>
+<script type="module" src="obby3d.js"></script>
 <script>
 (function(){
 "use strict";
@@ -457,20 +472,74 @@ function renderHome(){
 /* ---------- run engine ---------- */
 const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
 function weightedPick(n){return Q.map(q=>{const r=S.q[q.id];return [Math.random()*(!r?3:r.ok?1:4),q]}).sort((a,b)=>b[0]-a[0]).slice(0,n).map(x=>x[1])}
-const BW=72, GAP=46, STEP=BW+GAP, X0=24;
-let R=null,timerId=null,busy=false;
+let R=null,timerId=null,busy=false,track=null;
+/* block height level 1..5, shared by 2D and 3D tracks */
+function lvl(i,n){if(i===0||i===n)return 1;const pat=[1,3,2,4,3,2,4,5,3,2];return pat[i%pat.length]}
 
-function heightAt(i,n){if(i===0||i===n)return 40;const pat=[40,64,52,80,58,46,72,90,60,50];return pat[i%pat.length]}
+/* ---------- 2D track (fallback / lite mode) ---------- */
+const Track2D={
+  kind:"2d",BW:72,STEP:118,X0:24,
+  build(el,n,theme,lv,skin,hat){
+    this.el=el;this.n=n;this.lv=lv;
+    el.className="track";el.removeAttribute("style");
+    const T=THEMES[theme];
+    for(const [k,v] of Object.entries({"--sky":T.sky,"--haz":T.haz,"--haz2":T.haz2,"--top":T.top,"--dirt":T.dirt,"--speck":T.speck}))el.style.setProperty(k,v);
+    let h="";
+    for(let i=0;i<=n;i++){
+      const ht=28+lv(i,n)*12,cp=i>0&&i<n&&i%5===0;
+      h+=`<div class="blk" id="blk${i}" style="left:${this.X0+i*this.STEP}px;height:${34+ht}px">${i===n?'<span class="flag"></span>':cp?'<span class="flag cpflag"></span>':""}<span class="lbl">${i===0?"GO":i===n?"END":i}</span></div>`;
+    }
+    h+=`<div class="avatar" id="ava">${avatarSVG(skin.id,hat)}</div>`;
+    el.innerHTML=`<div class="strip" id="strip">${h}</div><div class="hazard"></div>`;
+    this.strip=el.querySelector("#strip");this.ava=el.querySelector("#ava");
+    this.strip.style.width=(this.X0+(n+1)*this.STEP+200)+"px";
+    this.pos=0;this.place(0);this.center(0,true);
+  },
+  xy(i){return {x:this.X0+i*this.STEP+this.BW/2-16,y:34+28+this.lv(i,this.n)*12}},
+  place(i){const p=this.xy(i);this.ava.style.left=p.x+"px";this.ava.style.bottom=p.y+"px";this.ava.style.transform=""},
+  center(i,instant){
+    const w=this.el.clientWidth,target=Math.min(0,w*0.3-(this.X0+i*this.STEP+this.BW/2)),s=this.strip;
+    if(instant){s.style.transition="none";s.style.transform=`translateX(${target}px)`;void s.offsetWidth;s.style.transition=""}else s.style.transform=`translateX(${target}px)`;
+  },
+  jump(from,to){return new Promise(res=>{
+    this.pos=to;const blk=this.el.querySelector("#blk"+from);if(blk)blk.classList.add("done");
+    if(REDUCED){this.place(to);this.center(to,true);res();return}
+    const A=this.xy(from),B=this.xy(to),dx=B.x-A.x,dy=-(B.y-A.y),peak=-Math.max(56,Math.abs(dy)+40);
+    const an=this.ava.animate([{transform:"translate(0,0)"},{transform:`translate(${dx*0.5}px,${peak}px)`,offset:.45},{transform:`translate(${dx}px,${dy}px)`}],{duration:560,easing:"cubic-bezier(.3,.6,.4,1)"});
+    this.center(to);an.onfinish=()=>{this.place(to);res()};
+  })},
+  fall(from){return new Promise(res=>{
+    if(REDUCED){res();return}
+    const a=this.ava,A=this.xy(from),gapX=this.STEP*0.55;
+    const an=a.animate([{transform:"translate(0,0)"},{transform:`translate(${gapX*0.5}px,-50px)`,offset:.35},{transform:`translate(${gapX}px,${A.y-20}px)`}],{duration:700,easing:"ease-in"});
+    an.onfinish=()=>{
+      a.style.opacity="0";
+      for(let k=0;k<6;k++){const s=document.createElement("div");s.className="splash";s.style.left=(A.x+gapX+8)+"px";s.style.bottom="26px";this.strip.appendChild(s);
+        s.animate([{transform:"translate(0,0)"},{transform:`translate(${(k-2.5)*12}px,${-30-Math.random()*30}px)`},{transform:`translate(${(k-2.5)*18}px,10px)`}],{duration:600,easing:"ease-out"});setTimeout(()=>s.remove(),600)}
+      setTimeout(()=>{a.style.opacity="";this.place(from);a.classList.remove("blink");void a.offsetWidth;a.classList.add("blink");res()},520);
+    };
+  })},
+  resize(){if(this.strip)this.center(this.pos,true)},
+  stop(){}
+};
+function webglOK(){try{const c=document.createElement("canvas");return !!(c.getContext("webgl2")||c.getContext("webgl"))}catch(e){return false}}
+function pickTrack(){return (!S.lite&&window.Track3D&&!window.Track3D.broken&&webglOK())?window.Track3D:Track2D}
+function popText(t){
+  const d=document.createElement("div");d.className="popl";d.textContent=t;$("#track").appendChild(d);
+  if(!REDUCED)d.animate([{transform:"translate(-50%,10px)",opacity:0},{transform:"translate(-50%,0)",opacity:1,offset:.2},{transform:"translate(-50%,-40px)",opacity:0}],{duration:1100,easing:"ease-out"});
+  setTimeout(()=>d.remove(),1100);
+}
 function startRun(cfg){
   // cfg: {mode,qs,theme,hearts,requeue,timer,meta}
   R=Object.assign({queue:cfg.qs.slice(),pos:0,total:cfg.qs.length,firstTry:0,falls:0,streak:0,bestStreak:0,coins:0,xp:0,seen:{},answered:false,time:cfg.timer||0,maxHearts:cfg.hearts},cfg);
   R.heartsLeft=cfg.hearts;
   busy=false;
   show("run");
-  const T=THEMES[R.theme];
-  const tr=$("#track");
-  for(const [k,v] of Object.entries({"--sky":T.sky,"--haz":T.haz,"--haz2":T.haz2,"--top":T.top,"--dirt":T.dirt,"--speck":T.speck}))tr.style.setProperty(k,v);
-  buildTrack();
+  if(track)track.stop();
+  track=pickTrack();
+  document.body.classList.add("running");
+  try{track.build($("#track"),R.total,R.theme,lvl,SKINS.find(x=>x.id===S.skin)||SKINS[0],S.hat)}
+  catch(e){console.warn("3D failed, using 2D",e);if(window.Track3D)window.Track3D.broken=true;track=Track2D;track.build($("#track"),R.total,R.theme,lvl,SKINS.find(x=>x.id===S.skin)||SKINS[0],S.hat)}
   clearInterval(timerId);
   $("#timer").classList.toggle("hidden",!R.timer);
   if(R.timer){$("#timer").textContent=R.time;$("#timer").classList.remove("low");
@@ -479,24 +548,6 @@ function startRun(cfg){
   nextQ();
 }
 function updateTimer(){$("#timer").textContent=R.time;$("#timer").classList.toggle("low",R.time<=10)}
-function blockTop(i){return 34+heightAt(i,R.total)}
-function buildTrack(){
-  const n=R.total;let h="";
-  for(let i=0;i<=n;i++){
-    const ht=heightAt(i,n);const cp=i>0&&i<n&&i%5===0;
-    h+=`<div class="blk" id="blk${i}" style="left:${X0+i*STEP}px;height:${34+ht}px">${i===n?'<span class="flag"></span>':cp?'<span class="flag cpflag"></span>':""}<span class="lbl">${i===0?"GO":i===n?"END":i}</span></div>`;
-  }
-  h+=`<div class="avatar" id="ava">${myAvatar()}</div>`;
-  $("#strip").innerHTML=h;
-  $("#strip").style.width=(X0+(n+1)*STEP+200)+"px";
-  placeAvatar(0);centerOn(0,true);
-}
-function avaXY(i){return {x:X0+i*STEP+BW/2-16,y:blockTop(i)}}
-function placeAvatar(i){const a=$("#ava"),p=avaXY(i);a.style.left=p.x+"px";a.style.bottom=p.y+"px";a.style.transform=""}
-function centerOn(i,instant){
-  const w=$("#track").clientWidth;const target=Math.min(0,w*0.3-(X0+i*STEP+BW/2));
-  const s=$("#strip");if(instant){s.style.transition="none";s.style.transform=`translateX(${target}px)`;void s.offsetWidth;s.style.transition=""}else s.style.transform=`translateX(${target}px)`;
-}
 function renderHearts(){
   if(!isFinite(R.maxHearts)){$("#hearts").innerHTML=`<span class="chip">∞ ♥</span>`;return}
   let h="";for(let i=0;i<R.maxHearts;i++)h+=heartSVG(i<R.heartsLeft);$("#hearts").innerHTML=h;
@@ -514,33 +565,6 @@ function nextQ(){
   $("#opts").innerHTML=shuffle(q.options).map((o,k)=>`<button class="opt" data-v="${esc(o)}"><span class="k">${"ABCD"[k]}</span><span>${fmt(o)}</span></button>`).join("");
   $$(".opt").forEach(b=>b.onclick=()=>answer(b));
   $("#fb").innerHTML="";
-}
-function coinPop(text,i){
-  const p=avaXY(i);const d=document.createElement("div");d.className="coinpop";d.textContent=text;d.style.left=(p.x-6)+"px";d.style.bottom=(p.y+48)+"px";
-  $("#strip").appendChild(d);
-  if(!REDUCED)d.animate([{transform:"translateY(0)",opacity:1},{transform:"translateY(-36px)",opacity:0}],{duration:900,easing:"ease-out"});
-  setTimeout(()=>d.remove(),900);
-}
-function jump(from,to,ok){
-  return new Promise(res=>{
-    const a=$("#ava"),A=avaXY(from),B=avaXY(to);
-    if(REDUCED){if(ok)placeAvatar(to);res();return}
-    if(ok){
-      const dx=B.x-A.x,dy=-(B.y-A.y);const peak=-Math.max(56,Math.abs(dy)+40);
-      const an=a.animate([{transform:"translate(0,0)"},{transform:`translate(${dx*0.5}px,${peak}px)`,offset:.45},{transform:`translate(${dx}px,${dy}px)`}],{duration:560,easing:"cubic-bezier(.3,.6,.4,1)"});
-      centerOn(to);
-      an.onfinish=()=>{placeAvatar(to);res()};
-    }else{
-      const gapX=STEP*0.55;const fallY=A.y-20; // down into hazard
-      const an=a.animate([{transform:"translate(0,0)"},{transform:`translate(${gapX*0.5}px,-50px)`,offset:.35},{transform:`translate(${gapX}px,${fallY}px)`}],{duration:700,easing:"ease-in"});
-      an.onfinish=()=>{
-        a.style.opacity="0";
-        for(let k=0;k<6;k++){const s=document.createElement("div");s.className="splash";const sx=A.x+gapX+8;s.style.left=sx+"px";s.style.bottom="26px";$("#strip").appendChild(s);
-          s.animate([{transform:"translate(0,0)"},{transform:`translate(${(k-2.5)*12}px,${-30-Math.random()*30}px)`},{transform:`translate(${(k-2.5)*18}px,10px)`}],{duration:600,easing:"ease-out"});setTimeout(()=>s.remove(),600)}
-        setTimeout(()=>{a.style.opacity="";placeAvatar(from);a.classList.remove("blink");void a.offsetWidth;a.classList.add("blink");res()},520);
-      };
-    }
-  });
 }
 const PRAISE=["NICE!","EPIC!","CLEAN JUMP!","GG!","POG!","LET'S GO!","PRO MOVE!"];
 async function answer(btn){
@@ -562,10 +586,9 @@ async function answer(btn){
     msg=`<div class="fb good"><h3>${PRAISE[Math.floor(Math.random()*PRAISE.length)]} +${c} 🪙</h3>${R.streak>=3?`<div>🔥 ${R.streak} in a row!</div>`:""}</div>`;
     $("#fb").innerHTML=msg;
     const from=R.pos;R.pos++;
-    $("#blk"+from).classList.add("done");
-    await jump(from,R.pos,true);
-    coinPop("+"+c,R.pos);
-    if(R.pos%5===0&&R.pos<R.total&&isFinite(R.maxHearts)&&R.heartsLeft<R.maxHearts){R.heartsLeft++;renderHearts();coinPop("+♥ CHECKPOINT",R.pos)}
+    await track.jump(from,R.pos);
+    popText("+"+c+" COINS");
+    if(R.pos%5===0&&R.pos<R.total&&isFinite(R.maxHearts)&&R.heartsLeft<R.maxHearts){R.heartsLeft++;renderHearts();popText("+♥ CHECKPOINT")}
     busy=false;
     if(R.pos>=R.total){setTimeout(()=>endRun("done"),500);return}
     if(R.timer&&R.time<=0){endRun("time");return}
@@ -582,7 +605,7 @@ async function answer(btn){
     const out=isFinite(R.maxHearts)&&R.heartsLeft<=0;
     $("#fb").innerHTML=`<div class="fb bad"><h3>💥 You fell in ${THEMES[R.theme].hazName}! It's ${fmt(q.answer)}</h3>${steps?`<div>How to solve it:</div><ol>${steps}</ol>`:""}${R.requeue&&!out?`<div style="margin-top:6px">🔁 This one comes back later in the run.</div>`:""}</div>
       <button class="bbtn" id="contBtn" style="margin-top:12px">${out?"GAME OVER ▶":R.timer&&R.time<=0?"FINISH ▶":"RESPAWN ▶"}</button>`;
-    await jump(R.pos,R.pos,false);
+    await track.fall(R.pos);
     busy=false;
     const cb=$("#contBtn");
     if(cb){cb.onclick=()=>{if(out)endRun("dead");else if(R.timer&&R.time<=0)endRun("time");else{nextQ();window.scrollTo({top:0,behavior:"smooth"})}};cb.focus({preventScroll:true})}
@@ -592,6 +615,7 @@ async function answer(btn){
 function confetti(n){const cols=["#ffcf3a","#4fd16b","#3fa7ff","#ff5a5a","#c9a7ff"];for(let i=0;i<n;i++){const c=document.createElement("i");c.className="confetti";c.style.left=Math.random()*100+"vw";c.style.background=cols[i%cols.length];c.style.animationDuration=(1.6+Math.random()*1.6)+"s";c.style.animationDelay=Math.random()*.4+"s";document.body.appendChild(c);setTimeout(()=>c.remove(),3800)}}
 function endRun(how){
   clearInterval(timerId);if(!R||R.ended)return;R.ended=true;
+  if(track)track.stop();document.body.classList.remove("running");
   const completed=how==="done";
   let bonus=0;
   if(R.timer&&completed)bonus+=R.time;
@@ -676,7 +700,7 @@ function askName(){
 $("#mSpeed").onclick=startSpeed;$("#mDaily").onclick=startDaily;$("#mRedo").onclick=startRedo;$("#mShop").onclick=openShop;
 $("#avaBox").onclick=openShop;$("#nameBtn").onclick=askName;
 $("#homeBtn").onclick=()=>{renderHome();show("home")};
-$("#quitBtn").onclick=()=>{clearInterval(timerId);if(R)R.ended=true;renderHome();show("home")};
+$("#quitBtn").onclick=()=>{clearInterval(timerId);if(R)R.ended=true;if(track)track.stop();document.body.classList.remove("running");renderHome();show("home")};
 $("#modal").onclick=e=>{if(e.target.id==="modal"&&S.name){closeModal();renderHome()}};
 document.addEventListener("keydown",e=>{
   if($("#run").classList.contains("hidden")||!$("#modal").classList.contains("hidden"))return;
@@ -687,8 +711,10 @@ document.addEventListener("keydown",e=>{
 $("#resetBtn").onclick=()=>modal(`<h2 class="px" style="font-size:13px;line-height:1.6">RESET EVERYTHING?</h2><p class="muted">Wipes coins, skins, stars and trophies on this device.</p><button class="bbtn" style="background:var(--bad)" id="yes">YES, RESET</button><button class="bbtn alt" style="margin-top:10px" id="no">CANCEL</button>`,()=>{
   $("#yes").onclick=()=>{try{localStorage.removeItem(KEY)}catch(e){}location.reload()};$("#no").onclick=closeModal});
 $("#themeBtn").onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==="light"?"":"light";try{localStorage.setItem(KEY+".theme",r.dataset.theme)}catch(e){}};
+const liteLabel=()=>{$("#liteBtn").textContent=S.lite?"3D: OFF (lite mode)":"3D: ON"};liteLabel();
+$("#liteBtn").onclick=()=>{S.lite=!S.lite;save();liteLabel()};
 try{const t=localStorage.getItem(KEY+".theme");if(t)document.documentElement.dataset.theme=t}catch(e){}
-window.addEventListener("resize",()=>{if(R&&!$("#run").classList.contains("hidden"))centerOn(R.pos,true)});
+window.addEventListener("resize",()=>{if(track&&!$("#run").classList.contains("hidden"))track.resize()});
 
 renderHome();
 if(!S.name)askName();

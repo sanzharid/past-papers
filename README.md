@@ -1,6 +1,6 @@
 # Maths Obby
 
-A front-end-only, blocky obstacle-course practice game for the Year 6 Pre-Test half-term papers (Practice Papers 1–4, October 2026).
+A front-end-only, 3D blocky obstacle-course practice game for the Year 6 Pre-Test half-term papers (Practice Papers 1–4, October 2026).
 
 - 192 questions from the four papers, each with a worked solution taken from the teacher's answer sheets.
 - **Obby courses**: each paper is a themed course (Lava Land, Ice Peaks, Jungle Jump, Space Station) of 10-jump stages. A correct answer jumps you to the next block. A wrong answer drops you in the hazard, costs a heart, shows the worked solution and sends that question to the back of the run. You get 5 hearts per stage, a heart back at each checkpoint, and stars based on hearts left.
@@ -8,6 +8,7 @@ A front-end-only, blocky obstacle-course practice game for the Year 6 Pre-Test h
 - **Daily 5**: a short daily course that keeps the streak going.
 - **Redo Tower**: replays every question answered wrongly.
 - **Biomes**: practise one topic at a time.
+- 3D course rendered with three.js (instanced blocks, no shadow maps, adaptive resolution). Falls back to a 2D course automatically if WebGL is unavailable, or on purpose via the "3D: ON" switch in the footer.
 - Coins, XP levels and trophies, plus a shop of original blocky skins and hats. Progress is saved in the browser only.
 
 No build step: open `index.html`, or serve the folder with GitHub Pages.
